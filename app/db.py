@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, timezone
 
+from sqlalchemy.engine import URL
 from sqlmodel import Field, SQLModel, create_engine
 
 
@@ -17,12 +18,24 @@ class Change(SQLModel, table=True):
     )
 
 
-database_url = os.getenv("DATABASE_URL", "sqlite:///./changes.db")
+if os.getenv("DB_HOST"):
+    database_url = URL.create(
+        "postgresql+psycopg",
+        username=os.environ["DB_USER"],
+        password=os.environ["DB_PASSWORD"],
+        host=os.environ["DB_HOST"],
+        port=int(os.getenv("DB_PORT", "5432")),
+        database=os.environ["DB_NAME"],
+    )
+else:
+    database_url = os.getenv("DATABASE_URL", "sqlite:///./changes.db")
+
 connect_args = (
     {"check_same_thread": False}
-    if database_url.startswith("sqlite")
+    if isinstance(database_url, str) and database_url.startswith("sqlite")
     else {}
 )
+
 engine = create_engine(database_url, connect_args=connect_args)
 
 
