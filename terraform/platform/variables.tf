@@ -21,3 +21,8 @@ variable "github_oidc_subject" {
 output "github_ecr_push_role_arn" {
   value = aws_iam_role.github_ecr_push.arn
 }
+
+variable "bootstrap_image_tag" {
+  description = "Image version pinned for the one-off database bootstrap task"
+  type        = string
+}

@@ -1,0 +1,6 @@
+image_tag           = "sha-098a96ffa955"
+bootstrap_image_tag = "sha-098a96ffa955"
+alert_email         = "frankjobby2@gmail.com"
+app_hostname        = "ccl.travelregger.com"
+allowed_client_cidr = "95.10.31.200/32"
+github_oidc_subject = "repo:TravelReg@186998767/cloud-change-log@1387518253:ref:refs/heads/main"
