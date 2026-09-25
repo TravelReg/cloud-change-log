@@ -1,0 +1,150 @@
+name: Release CCL to ECS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ccl-platform-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    env:
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Assume deployment role
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: eu-north-1
+          allowed-account-ids: '820932217554'
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v4
+
+      - name: Read selected image tag
+        run: |
+          IMAGE_TAG="$(sed -nE 's/^[[:space:]]*image_tag[[:space:]]*=[[:space:]]*"(sha-[0-9a-f]{12})"[[:space:]]*$/\1/p' terraform/platform/terraform.tfvars)"
+          test -n "$IMAGE_TAG"
+          echo "IMAGE_TAG=$IMAGE_TAG" >> "$GITHUB_ENV"
+          echo "Selected image: $IMAGE_TAG"
+
+      - name: Confirm image exists in ECR
+        run: |
+          aws ecr describe-images \
+            --region eu-north-1 \
+            --repository-name ccl-dev \
+            --image-ids "imageTag=$IMAGE_TAG" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text
+
+      - name: Connect to Terraform state
+        run: |
+          test -n "$TF_STATE_BUCKET"
+          terraform -chdir=terraform/platform init \
+            -backend-config="bucket=$TF_STATE_BUCKET" \
+            -reconfigure \
+            -input=false \
+            -lockfile=readonly
+
+      - name: Save release plan
+        run: |
+          terraform -chdir=terraform/platform plan \
+            -input=false \
+            -no-color \
+            -lock-timeout=5m \
+            -out="$RUNNER_TEMP/ccl-release.tfplan"
+
+      - name: Reject unrelated infrastructure changes
+        run: |
+          trap 'rm -f "$RUNNER_TEMP/ccl-release-plan.json"' EXIT
+          terraform -chdir=terraform/platform show -json \
+            "$RUNNER_TEMP/ccl-release.tfplan" \
+            > "$RUNNER_TEMP/ccl-release-plan.json"
+
+          python3 - "$RUNNER_TEMP/ccl-release-plan.json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1]) as file:
+              plan = json.load(file)
+
+          changes = {
+              item["address"]: tuple(item["change"]["actions"])
+              for item in plan.get("resource_changes", [])
+              if item["change"]["actions"] != ["no-op"]
+          }
+
+          expected_addresses = {
+              "aws_ecs_task_definition.web",
+              "aws_ecs_service.web",
+          }
+          valid_task_actions = {
+              ("delete", "create"),
+              ("create", "delete"),
+          }
+
+          if (
+              set(changes) != expected_addresses
+              or changes["aws_ecs_task_definition.web"] not in valid_task_actions
+              or changes["aws_ecs_service.web"] != ("update",)
+          ):
+              print("Release plan rejected. Proposed resource actions:")
+              for address, actions in changes.items():
+                  print(f"  {address}: {', '.join(actions)}")
+              sys.exit(1)
+
+          print("Plan changes only the web task definition and ECS service.")
+          PY
+
+      - name: Apply approved plan
+        run: |
+          terraform -chdir=terraform/platform apply \
+            -input=false \
+            -no-color \
+            "$RUNNER_TEMP/ccl-release.tfplan"
+
+      - name: Wait for ECS and verify deployed image
+        run: |
+          aws ecs wait services-stable \
+            --region eu-north-1 \
+            --cluster ccl-dev \
+            --services ccl-dev-web
+
+          TASK_DEFINITION="$(aws ecs describe-services \
+            --region eu-north-1 \
+            --cluster ccl-dev \
+            --services ccl-dev-web \
+            --query 'services[0].taskDefinition' \
+            --output text)"
+
+          DEPLOYED_IMAGE="$(aws ecs describe-task-definition \
+            --region eu-north-1 \
+            --task-definition "$TASK_DEFINITION" \
+            --query "taskDefinition.containerDefinitions[?name=='web'].image | [0]" \
+            --output text)"
+
+          EXPECTED_IMAGE="820932217554.dkr.ecr.eu-north-1.amazonaws.com/ccl-dev:$IMAGE_TAG"
+          echo "Deployed image: $DEPLOYED_IMAGE"
+          test "$DEPLOYED_IMAGE" = "$EXPECTED_IMAGE"
+
+          TARGET_GROUP="$(terraform -chdir=terraform/platform output -raw ecs_target_group_arn)"
+          HEALTHY="$(aws elbv2 describe-target-health \
+            --region eu-north-1 \
+            --target-group-arn "$TARGET_GROUP" \
+            --query "length(TargetHealthDescriptions[?TargetHealth.State=='healthy'])" \
+            --output text)"
+          echo "Healthy ALB targets: $HEALTHY"
+          test "$HEALTHY" -ge 1
