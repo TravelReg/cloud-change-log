@@ -41,3 +41,6 @@ jobs:
         run: |
           terraform -chdir=terraform/platform state list aws_ecs_service.web |
             grep -Fx 'aws_ecs_service.web'
+
+      - name: Plan platform without applying
+        run: terraform -chdir=terraform/platform plan -input=false -no-color -lock-timeout=5m
