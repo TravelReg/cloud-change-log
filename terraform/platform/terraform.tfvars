@@ -1,4 +1,4 @@
-image_tag              = "sha-098a96ffa955"
+image_tag              = "sha-96dd36490155"
 bootstrap_image_tag    = "sha-098a96ffa955"
 alert_email            = "frankjobby2@gmail.com"
 app_hostname           = "ccl.travelregger.com"
