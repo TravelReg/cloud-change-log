@@ -26,3 +26,8 @@ variable "bootstrap_image_tag" {
   description = "Image version pinned for the one-off database bootstrap task"
   type        = string
 }
+
+variable "terraform_state_bucket" {
+  description = "S3 bucket holding the platform Terraform state"
+  type        = string
+}
