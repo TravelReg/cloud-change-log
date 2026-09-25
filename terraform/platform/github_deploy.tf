@@ -44,3 +44,49 @@ resource "aws_iam_role_policy" "github_deploy_state" {
 output "github_deploy_role_arn" {
   value = aws_iam_role.github_deploy.arn
 }
+
+resource "aws_iam_role_policy" "github_deploy_read" {
+  name = "ccl-dev-platform-read"
+  role = aws_iam_role.github_deploy.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "acm:DescribeCertificate",
+          "acm:ListTagsForCertificate",
+          "cloudwatch:DescribeAlarms",
+          "cloudwatch:ListTagsForResource",
+          "ec2:Describe*",
+          "ecr:DescribeImages",
+          "ecr:DescribeRepositories",
+          "ecr:ListTagsForResource",
+          "ecs:DescribeClusters",
+          "ecs:DescribeServices",
+          "ecs:DescribeTaskDefinition",
+          "ecs:ListTagsForResource",
+          "elasticloadbalancing:Describe*",
+          "iam:GetOpenIDConnectProvider",
+          "iam:GetRole",
+          "iam:GetRolePolicy",
+          "iam:ListAttachedRolePolicies",
+          "iam:ListRolePolicies",
+          "iam:ListRoleTags",
+          "logs:DescribeLogGroups",
+          "logs:ListTagsForResource",
+          "rds:DescribeDBInstances",
+          "rds:DescribeDBSubnetGroups",
+          "rds:ListTagsForResource",
+          "secretsmanager:DescribeSecret",
+          "sns:GetSubscriptionAttributes",
+          "sns:GetTopicAttributes",
+          "sns:ListSubscriptionsByTopic",
+          "sns:ListTagsForResource"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
