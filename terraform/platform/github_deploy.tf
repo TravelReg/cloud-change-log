@@ -90,3 +90,38 @@ resource "aws_iam_role_policy" "github_deploy_read" {
     ]
   })
 }
+
+resource "aws_iam_role_policy" "github_deploy_ecs" {
+  name = "ccl-dev-ecs-release"
+  role = aws_iam_role.github_deploy.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "RegisterTaskRevision"
+        Effect   = "Allow"
+        Action   = ["ecs:RegisterTaskDefinition"]
+        Resource = "*"
+      },
+      {
+        Sid      = "UpdateWebService"
+        Effect   = "Allow"
+        Action   = ["ecs:UpdateService"]
+        Resource = "arn:aws:ecs:eu-north-1:820932217554:service/ccl-dev/ccl-dev-web"
+      },
+      {
+        Sid      = "PassWebExecutionRole"
+        Effect   = "Allow"
+        Action   = ["iam:PassRole"]
+        Resource = aws_iam_role.ecs_execution.arn
+
+        Condition = {
+          StringEquals = {
+            "iam:PassedToService" = "ecs-tasks.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+}

@@ -1,5 +1,6 @@
 resource "aws_ecs_task_definition" "web" {
   family                   = "ccl-dev-web"
+  skip_destroy             = true
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
   cpu                      = "256"
