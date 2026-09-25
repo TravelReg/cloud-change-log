@@ -1,0 +1,72 @@
+name: Build and publish CCL image
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set image tag
+        run: echo "IMAGE_TAG=sha-${GITHUB_SHA::12}" >> "$GITHUB_ENV"
+
+      - name: Build image
+        run: docker build -t "ccl-ci:$IMAGE_TAG" .
+
+      - name: Test the running app
+        run: |
+          docker run -d --name ccl-ci \
+            -p 127.0.0.1:8000:8000 \
+            -e DATABASE_URL=sqlite:////tmp/ccl-ci.db \
+            -e ADMIN_TOKEN=ci-test-token \
+            "ccl-ci:$IMAGE_TAG"
+
+          trap 'docker logs ccl-ci || true; docker rm -f ccl-ci >/dev/null 2>&1 || true' EXIT
+
+          for attempt in {1..20}; do
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+
+          curl -fsS http://127.0.0.1:8000/health
+          curl -fsS \
+            -H "X-Admin-Token: ci-test-token" \
+            http://127.0.0.1:8000/changes
+
+      - name: Get temporary AWS credentials
+        if: github.event_name == 'push'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ECR_PUSH_ROLE_ARN }}
+          aws-region: eu-north-1
+
+      - name: Log in to ECR
+        if: github.event_name == 'push'
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Publish immutable image
+        if: github.event_name == 'push'
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          if aws ecr describe-images \
+            --repository-name ccl-dev \
+            --image-ids "imageTag=$IMAGE_TAG" >/dev/null 2>&1; then
+            echo "Image $IMAGE_TAG already exists."
+          else
+            docker tag "ccl-ci:$IMAGE_TAG" "$ECR_REGISTRY/ccl-dev:$IMAGE_TAG"
+            docker push "$ECR_REGISTRY/ccl-dev:$IMAGE_TAG"
+          fi
