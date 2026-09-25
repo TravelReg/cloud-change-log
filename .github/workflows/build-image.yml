@@ -41,6 +41,10 @@ jobs:
           done
 
           curl -fsS http://127.0.0.1:8000/health
+
+          docker exec ccl-ci \
+            python -c 'from app.db import create_tables; create_tables()'
+
           curl -fsS \
             -H "X-Admin-Token: ci-test-token" \
             http://127.0.0.1:8000/changes
