@@ -66,3 +66,23 @@ resource "aws_cloudwatch_metric_alarm" "low_db_storage" {
 
   alarm_actions = [aws_sns_topic.alerts.arn]
 }
+
+resource "aws_cloudwatch_metric_alarm" "web_5xx" {
+  alarm_name          = "ccl-dev-web-5xx"
+  alarm_description   = "The CCL application returned a 5xx response"
+  namespace           = "AWS/ApplicationELB"
+  metric_name         = "HTTPCode_Target_5XX_Count"
+  statistic           = "Sum"
+  period              = 60
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    LoadBalancer = aws_lb.app.arn_suffix
+    TargetGroup  = aws_lb_target_group.app.arn_suffix
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+}
